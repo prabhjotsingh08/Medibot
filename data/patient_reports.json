@@ -1,0 +1,263 @@
+[
+  {
+    "patient_name": "John Smith",
+    "discharge_date": "2024-01-15",
+    "primary_diagnosis": "Chronic Kidney Disease Stage 3",
+    "medications": ["Lisinopril 10mg daily", "Furosemide 20mg twice daily"],
+    "dietary_restrictions": "Low sodium (2g/day), fluid restriction (1.5L/day)",
+    "follow_up": "Nephrology clinic in 2 weeks",
+    "warning_signs": "Swelling, shortness of breath, decreased urine output",
+    "discharge_instructions": "Monitor blood pressure daily, weigh yourself daily"
+  },
+  {
+    "patient_name": "Mary Johnson",
+    "discharge_date": "2024-02-10",
+    "primary_diagnosis": "Type 2 Diabetes Mellitus",
+    "medications": ["Metformin 500mg twice daily", "Insulin glargine 10 units nightly"],
+    "dietary_restrictions": "Low sugar, carbohydrate-controlled diet",
+    "follow_up": "Endocrinology clinic in 1 month",
+    "warning_signs": "Blurred vision, excessive thirst, dizziness",
+    "discharge_instructions": "Monitor blood sugar 4 times daily, keep glucose log"
+  },
+  {
+    "patient_name": "Robert Brown",
+    "discharge_date": "2024-03-05",
+    "primary_diagnosis": "Community Acquired Pneumonia",
+    "medications": ["Amoxicillin-Clavulanate 625mg thrice daily for 7 days", "Paracetamol 500mg as needed for fever"],
+    "dietary_restrictions": "Normal diet, encourage hydration",
+    "follow_up": "Pulmonary OPD in 10 days",
+    "warning_signs": "High fever, persistent cough, breathing difficulty",
+    "discharge_instructions": "Complete antibiotic course, rest adequately"
+  },
+  {
+    "patient_name": "Linda Davis",
+    "discharge_date": "2024-03-15",
+    "primary_diagnosis": "Hypertension",
+    "medications": ["Amlodipine 5mg daily", "Losartan 50mg daily"],
+    "dietary_restrictions": "Low salt (2g/day)",
+    "follow_up": "Cardiology clinic in 3 weeks",
+    "warning_signs": "Severe headache, chest pain, blurred vision",
+    "discharge_instructions": "Check BP daily, avoid stress and caffeine"
+  },
+  {
+    "patient_name": "Michael Wilson",
+    "discharge_date": "2024-04-02",
+    "primary_diagnosis": "Acute Myocardial Infarction (Post-PCI)",
+    "medications": ["Aspirin 75mg daily", "Clopidogrel 75mg daily", "Atorvastatin 40mg nightly"],
+    "dietary_restrictions": "Low fat, low cholesterol diet",
+    "follow_up": "Cardiology OPD in 2 weeks",
+    "warning_signs": "Chest discomfort, shortness of breath, excessive sweating",
+    "discharge_instructions": "Avoid strenuous activity, take medications regularly"
+  },
+  {
+    "patient_name": "Patricia Taylor",
+    "discharge_date": "2024-05-01",
+    "primary_diagnosis": "Chronic Obstructive Pulmonary Disease (COPD) Exacerbation",
+    "medications": ["Tiotropium inhaler once daily", "Prednisolone 20mg for 5 days"],
+    "dietary_restrictions": "Balanced diet, encourage fluids",
+    "follow_up": "Pulmonology clinic in 2 weeks",
+    "warning_signs": "Increased breathlessness, wheezing, chest tightness",
+    "discharge_instructions": "Use inhaler as prescribed, avoid smoke exposure"
+  },
+  {
+    "patient_name": "James Anderson",
+    "discharge_date": "2024-05-20",
+    "primary_diagnosis": "Gastroenteritis (Dehydration)",
+    "medications": ["ORS as required", "Ondansetron 4mg thrice daily for 3 days"],
+    "dietary_restrictions": "Soft bland diet, no spicy food",
+    "follow_up": "Family physician in 5 days",
+    "warning_signs": "Persistent vomiting, bloody stool, weakness",
+    "discharge_instructions": "Drink fluids frequently, avoid outside food"
+  },
+  {
+    "patient_name": "Elizabeth Thomas",
+    "discharge_date": "2024-06-05",
+    "primary_diagnosis": "Hypothyroidism",
+    "medications": ["Levothyroxine 75mcg daily (before breakfast)"],
+    "dietary_restrictions": "Avoid soy and high-fiber foods near medication time",
+    "follow_up": "Endocrinology in 6 weeks",
+    "warning_signs": "Extreme fatigue, weight gain, cold intolerance",
+    "discharge_instructions": "Take medication regularly on an empty stomach"
+  },
+  {
+    "patient_name": "David Martinez",
+    "discharge_date": "2024-06-12",
+    "primary_diagnosis": "Peptic Ulcer Disease",
+    "medications": ["Pantoprazole 40mg daily", "Sucralfate 1g thrice daily before meals"],
+    "dietary_restrictions": "Avoid spicy and acidic foods, no alcohol",
+    "follow_up": "Gastroenterology OPD in 3 weeks",
+    "warning_signs": "Black stools, vomiting blood, severe abdominal pain",
+    "discharge_instructions": "Avoid NSAIDs, maintain meal schedule"
+  },
+  {
+    "patient_name": "Jennifer Garcia",
+    "discharge_date": "2024-07-01",
+    "primary_diagnosis": "Urinary Tract Infection",
+    "medications": ["Ciprofloxacin 500mg twice daily for 5 days", "Paracetamol 500mg as needed"],
+    "dietary_restrictions": "Increase water intake to 2.5L/day",
+    "follow_up": "Primary care in 7 days",
+    "warning_signs": "Fever recurrence, flank pain, burning urination",
+    "discharge_instructions": "Complete antibiotics, maintain hygiene"
+  },
+  {
+    "patient_name": "William Lee",
+    "discharge_date": "2024-07-20",
+    "primary_diagnosis": "Ischemic Stroke (Right Hemiparesis)",
+    "medications": ["Aspirin 81mg daily", "Atorvastatin 20mg nightly"],
+    "dietary_restrictions": "Low sodium, low fat diet",
+    "follow_up": "Neurology clinic in 1 month",
+    "warning_signs": "Sudden weakness, speech difficulty, facial droop",
+    "discharge_instructions": "Continue physiotherapy, avoid smoking"
+  },
+  {
+    "patient_name": "Susan Clark",
+    "discharge_date": "2024-08-05",
+    "primary_diagnosis": "Rheumatoid Arthritis",
+    "medications": ["Methotrexate 15mg weekly", "Folic acid 5mg weekly", "NSAIDs as needed"],
+    "dietary_restrictions": "Balanced diet, limit alcohol",
+    "follow_up": "Rheumatology clinic in 3 weeks",
+    "warning_signs": "Joint swelling, fever, mouth ulcers",
+    "discharge_instructions": "Take medication with food, monitor liver function"
+  },
+  {
+    "patient_name": "Charles Lewis",
+    "discharge_date": "2024-08-20",
+    "primary_diagnosis": "Congestive Heart Failure",
+    "medications": ["Furosemide 40mg daily", "Carvedilol 6.25mg twice daily"],
+    "dietary_restrictions": "Low sodium (1.5g/day), fluid restriction (1.2L/day)",
+    "follow_up": "Cardiology OPD in 2 weeks",
+    "warning_signs": "Rapid weight gain, ankle swelling, fatigue",
+    "discharge_instructions": "Weigh daily, limit fluids, avoid alcohol"
+  },
+  {
+    "patient_name": "Barbara Walker",
+    "discharge_date": "2024-09-02",
+    "primary_diagnosis": "Bronchial Asthma",
+    "medications": ["Salbutamol inhaler as needed", "Budesonide inhaler twice daily"],
+    "dietary_restrictions": "None specific",
+    "follow_up": "Pulmonology OPD in 2 weeks",
+    "warning_signs": "Severe wheezing, chest tightness, no relief from inhaler",
+    "discharge_instructions": "Avoid triggers, use inhaler spacer"
+  },
+  {
+    "patient_name": "Daniel Hall",
+    "discharge_date": "2024-09-15",
+    "primary_diagnosis": "Anemia (Iron Deficiency)",
+    "medications": ["Ferrous sulfate 325mg thrice daily", "Vitamin C 500mg daily"],
+    "dietary_restrictions": "Increase iron-rich foods",
+    "follow_up": "Hematology in 4 weeks",
+    "warning_signs": "Extreme fatigue, palpitations, pale skin",
+    "discharge_instructions": "Take iron tablets after meals"
+  },
+  {
+    "patient_name": "Nancy Allen",
+    "discharge_date": "2024-10-05",
+    "primary_diagnosis": "Hypokalemia",
+    "medications": ["Potassium chloride syrup 10ml twice daily"],
+    "dietary_restrictions": "Increase potassium-rich foods (bananas, oranges)",
+    "follow_up": "Internal medicine in 1 week",
+    "warning_signs": "Muscle weakness, irregular heartbeat, cramps",
+    "discharge_instructions": "Do not skip doses, monitor ECG if symptomatic"
+  },
+  {
+    "patient_name": "Thomas Young",
+    "discharge_date": "2024-10-18",
+    "primary_diagnosis": "COVID-19 (Mild Pneumonia)",
+    "medications": ["Azithromycin 500mg daily for 5 days", "Vitamin C and Zinc supplements"],
+    "dietary_restrictions": "Normal diet, adequate fluids",
+    "follow_up": "Teleconsultation in 7 days",
+    "warning_signs": "Breathing difficulty, high fever, confusion",
+    "discharge_instructions": "Isolate for 7 days, monitor oxygen saturation"
+  },
+  {
+    "patient_name": "Lisa Hernandez",
+    "discharge_date": "2024-11-01",
+    "primary_diagnosis": "Gallstones (Post Cholecystectomy)",
+    "medications": ["Paracetamol 500mg every 6 hours as needed", "Omeprazole 20mg daily"],
+    "dietary_restrictions": "Low fat diet for 2 weeks",
+    "follow_up": "Surgery OPD in 10 days",
+    "warning_signs": "Severe abdominal pain, vomiting, jaundice",
+    "discharge_instructions": "Avoid heavy lifting, follow wound care instructions"
+  },
+  {
+    "patient_name": "Christopher King",
+    "discharge_date": "2024-11-18",
+    "primary_diagnosis": "Gout Flare",
+    "medications": ["Colchicine 0.6mg twice daily", "Allopurinol 100mg daily"],
+    "dietary_restrictions": "Avoid red meat, alcohol, and seafood",
+    "follow_up": "Rheumatology clinic in 3 weeks",
+    "warning_signs": "Joint swelling, pain, fever",
+    "discharge_instructions": "Stay hydrated, avoid purine-rich foods"
+  },
+  {
+    "patient_name": "Karen Wright",
+    "discharge_date": "2024-12-01",
+    "primary_diagnosis": "Migraine Headache",
+    "medications": ["Sumatriptan 50mg as needed", "Propranolol 20mg twice daily"],
+    "dietary_restrictions": "Avoid caffeine and processed foods",
+    "follow_up": "Neurology in 4 weeks",
+    "warning_signs": "Severe headache, vision loss, vomiting",
+    "discharge_instructions": "Maintain headache diary, manage stress"
+  },
+  {
+    "patient_name": "Matthew Lopez",
+    "discharge_date": "2024-12-20",
+    "primary_diagnosis": "Appendicitis (Post Appendectomy)",
+    "medications": ["Cefuroxime 500mg twice daily for 5 days", "Paracetamol 500mg as needed"],
+    "dietary_restrictions": "Soft diet for 5 days",
+    "follow_up": "Surgery OPD in 7 days",
+    "warning_signs": "Fever, wound discharge, abdominal pain",
+    "discharge_instructions": "Avoid strenuous activity, maintain wound hygiene"
+  },
+  {
+    "patient_name": "Betty Hill",
+    "discharge_date": "2025-01-10",
+    "primary_diagnosis": "Depressive Disorder",
+    "medications": ["Sertraline 50mg daily", "Clonazepam 0.5mg at night"],
+    "dietary_restrictions": "Balanced diet, avoid alcohol",
+    "follow_up": "Psychiatry OPD in 3 weeks",
+    "warning_signs": "Suicidal thoughts, agitation, sleep disturbance",
+    "discharge_instructions": "Take medication regularly, maintain sleep routine"
+  },
+  {
+    "patient_name": "Steven Scott",
+    "discharge_date": "2025-01-22",
+    "primary_diagnosis": "Epilepsy",
+    "medications": ["Sodium valproate 500mg twice daily"],
+    "dietary_restrictions": "Avoid alcohol and sleep deprivation",
+    "follow_up": "Neurology in 1 month",
+    "warning_signs": "Frequent seizures, confusion, nausea",
+    "discharge_instructions": "Do not stop medication abruptly"
+  },
+  {
+    "patient_name": "Donna Green",
+    "discharge_date": "2025-02-05",
+    "primary_diagnosis": "Osteoarthritis (Knee)",
+    "medications": ["Paracetamol 500mg thrice daily", "Glucosamine 500mg daily"],
+    "dietary_restrictions": "Balanced diet, maintain healthy weight",
+    "follow_up": "Orthopedic clinic in 4 weeks",
+    "warning_signs": "Swelling, redness, joint stiffness",
+    "discharge_instructions": "Perform physiotherapy exercises daily"
+  },
+  {
+    "patient_name": "Paul Baker",
+    "discharge_date": "2025-03-01",
+    "primary_diagnosis": "Tuberculosis (Pulmonary)",
+    "medications": ["Rifampicin 600mg daily", "Isoniazid 300mg daily", "Pyrazinamide 1500mg daily"],
+    "dietary_restrictions": "High protein diet, avoid alcohol",
+    "follow_up": "TB clinic every 2 weeks",
+    "warning_signs": "Fever, cough with blood, weight loss",
+    "discharge_instructions": "Adhere strictly to medication, cover mouth while coughing"
+  },
+  {
+    "patient_name": "Sarah Adams",
+    "discharge_date": "2025-03-15",
+    "primary_diagnosis": "Breast Cancer (Post Lumpectomy)",
+    "medications": ["Tamoxifen 20mg daily"],
+    "dietary_restrictions": "Balanced diet, avoid soy supplements",
+    "follow_up": "Oncology clinic in 2 weeks",
+    "warning_signs": "Wound redness, swelling, fever",
+    "discharge_instructions": "Perform wound care, report new lumps immediately"
+  }
+]
+ 
