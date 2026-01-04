@@ -59,7 +59,6 @@ def rag_retrieval(query: str, k: int = 5) -> str:
             page = metadata.get("page", "N/A")
             
             formatted_results += f"--- Reference {i} (Relevance: {score:.3f}) ---\n"
-            import os
             formatted_results += f"Source: {os.path.basename(source)}, Page {page}\n"
             formatted_results += f"Content: {doc.page_content}\n\n"
         
@@ -91,8 +90,11 @@ def retrieve_medical_knowledge(query: str, k: int = 5) -> List[Dict[str, Any]]:
             return []
         
         docs = vectorstore.similarity_search_with_score(query, k=k)
+        print("##############################")
+        print(docs)
         
         results = []
+        print("printing results as well")
         for doc, score in docs:
             metadata = doc.metadata
             results.append({
@@ -101,6 +103,10 @@ def retrieve_medical_knowledge(query: str, k: int = 5) -> List[Dict[str, Any]]:
                 "score": float(score),
                 "citation": f"{os.path.basename(metadata.get('source', 'Unknown'))}, Page {metadata.get('page', 'N/A')}"
             })
+
+            print("*************************")
+            print(doc.page_content)
+            print("*************************")
         
         return results
         

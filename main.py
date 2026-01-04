@@ -6,7 +6,6 @@ Uses Streamlit for the UI.
 """
 
 import os
-import sys
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -28,70 +27,71 @@ from agents.receptionist_agent import ReceptionistAgent
 from agents.clinical_agent import ClinicalAgent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config.settings import settings
-from rag.vectorstore import get_vectorstore, initialize_vectorstore
+from rag.vectorstore import get_vectorstore
 from rag.embeddings import get_embedding_model
 from rag.loader import build_vectorstore_from_pdf
-
 
 # Initial greeting message
 INITIAL_GREETING = "Hello! I'm here to help with your post-discharge care. Could you please tell me your name so I can look up your discharge report?"
 
 
-@st.cache_resource
 def initialize_agents():
     """
     Initialize all agents for the multi-agent system.
+    Always deletes and rebuilds the vectorstore from scratch.
     
     Returns:
-        Dictionary of initialized agents
+        Dictionary of initialized agents or None on failure
     """
     logger.info("Initializing agents and resources...")
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Initializing agents and resources...")
     
-    # Initialize embedding model
+    # Verify PDF exists before proceeding
+    pdf_path = settings.NEPHROLOGY_PDF_PATH
+    if not os.path.exists(pdf_path):
+        logger.error(f"PDF file not found: {pdf_path}")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] PDF file not found: {pdf_path}")
+        return None
+    
+    # Initialize embedding model first (required for vectorstore)
     logger.info("Initializing embedding model...")
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Initializing embedding model...")
     get_embedding_model()
     
-    # Check if vectorstore exists, if not build it from PDF
-    logger.info("Checking vectorstore...")
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Checking vectorstore...")
+    # Build vectorstore from PDF (handles deletion and rebuild internally)
+    logger.info("Building vectorstore from PDF (this will delete any existing collection)...")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Building vectorstore from PDF...")
+    
+    success = build_vectorstore_from_pdf(pdf_path, force_rebuild=True)
+    if not success:
+        logger.error("Failed to build vectorstore")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Failed to build vectorstore")
+        return None
+    
+    # Get the newly created vectorstore
     vectorstore = get_vectorstore()
     if not vectorstore:
-        logger.info("Vectorstore not found. Building from PDF...")
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Vectorstore not found. Building from PDF...")
-        pdf_path = settings.NEPHROLOGY_PDF_PATH
-        if os.path.exists(pdf_path):
-            success = build_vectorstore_from_pdf(pdf_path, force_rebuild=False)
-            if success:
-                logger.info("Vectorstore built successfully")
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Vectorstore built successfully")
-                vectorstore = get_vectorstore()
-            else:
-                logger.warning("Failed to build vectorstore. RAG may not work properly.")
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] Failed to build vectorstore. RAG may not work properly.")
-        else:
-            logger.warning(f"PDF file not found: {pdf_path}. RAG may not work properly.")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] PDF file not found: {pdf_path}. RAG may not work properly.")
+        logger.error("Vectorstore not available after building")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Vectorstore not available after building")
+        return None
     
-    # Initialize LLM (only for answer generation - minimize API calls)
+    logger.info("Vectorstore ready")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Vectorstore ready")
+    
+    # Initialize LLM
     logger.info("Initializing LLM (Gemini)...")
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Initializing LLM (Gemini)...")
-    if not settings.GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not found. LLM functionality may be limited.")
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] GEMINI_API_KEY not found. LLM functionality may be limited.")
-        llm = None
-    else:
-        llm = ChatGoogleGenerativeAI(
-            model=settings.LLM_MODEL,
-            google_api_key=settings.GEMINI_API_KEY,
-            temperature=settings.LLM_TEMPERATURE
-        )
     
-    if not llm:
-        logger.error("LLM not initialized. Cannot create agents.")
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] LLM not initialized. Cannot create agents.")
+    if not settings.GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY not found. Cannot create agents.")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] GEMINI_API_KEY not found")
         return None
+    
+    llm = ChatGoogleGenerativeAI(
+        model=settings.LLM_MODEL,
+        google_api_key=settings.GEMINI_API_KEY,
+        temperature=settings.LLM_TEMPERATURE
+    )
     
     # Initialize clinical agent first (needed for receptionist routing)
     logger.info("Initializing clinical agent...")
@@ -106,7 +106,6 @@ def initialize_agents():
     logger.info("All agents initialized successfully")
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] All agents initialized successfully")
     
-    # Return agents dictionary
     return {
         "receptionist": receptionist_agent,
         "clinical": clinical_agent
@@ -163,22 +162,25 @@ def main():
         
         st.markdown("---")
     
-    # Initialize agents (cached)
-    agents = initialize_agents()
-    
-    if not agents:
-        st.error("❌ Failed to initialize agents. Please check your configuration and logs.")
-        st.stop()
+    # Initialize agents once per session
+    if "agents_initialized" not in st.session_state:
+        with st.spinner("Initializing system... This may take a few minutes..."):
+            agents = initialize_agents()
+            if not agents:
+                st.error("❌ Failed to initialize agents. Please check your configuration and logs.")
+                st.stop()
+            st.session_state.agents = agents
+            st.session_state.agents_initialized = True
+    else:
+        agents = st.session_state.agents
     
     # Initialize session state
     if "messages" not in st.session_state:
-        st.session_state.messages = []
-        # Add initial greeting message
-        st.session_state.messages.append({
+        st.session_state.messages = [{
             "role": "assistant",
             "content": INITIAL_GREETING,
             "metadata": {"action": "initial_greeting"}
-        })
+        }]
     if "current_patient" not in st.session_state:
         st.session_state.current_patient = None
     if "current_agent" not in st.session_state:
@@ -186,16 +188,14 @@ def main():
     if "conversation_history" not in st.session_state:
         st.session_state.conversation_history = []
     
-    # Clear conversation button in sidebar (after agents initialization)
+    # Clear conversation button in sidebar
     with st.sidebar:
         if st.button("🗑️ Clear Conversation", use_container_width=True):
-            st.session_state.messages = []
-            # Add initial greeting message after clearing
-            st.session_state.messages.append({
+            st.session_state.messages = [{
                 "role": "assistant",
                 "content": INITIAL_GREETING,
                 "metadata": {"action": "initial_greeting"}
-            })
+            }]
             st.session_state.current_patient = None
             st.session_state.current_agent = agents["receptionist"]
             st.session_state.conversation_history = []
@@ -214,21 +214,19 @@ def main():
                 
                 # Display RAG sources if available
                 citations = metadata.get("citations", [])
-                if citations and len(citations) > 0:
+                if citations:
                     st.markdown("---")
                     st.markdown("### 📚 RAG Sources")
                     for i, cite in enumerate(citations, 1):
                         citation_text = cite.get('citation', 'Unknown source') or 'Unknown source'
-                        distance_score = cite.get('distance_score', 'N/A')
                         excerpt = cite.get('excerpt', '')
                         with st.expander(f"{i}. {citation_text}", expanded=False):
-                            st.markdown(f"**Distance Score:** {distance_score}")
                             if excerpt:
-                                st.markdown(f"**Excerpt:** {excerpt}")
+                                st.markdown("{excerpt}")
                 
                 # Display web search sources if available
                 web_sources = metadata.get("web_sources", [])
-                if web_sources and len(web_sources) > 0:
+                if web_sources:
                     st.markdown("---")
                     st.markdown("### 📚 Web Search Sources")
                     for i, source in enumerate(web_sources, 1):
@@ -253,7 +251,7 @@ def main():
         # Determine if routing to clinical agent is needed
         current_agent = st.session_state.current_agent
         agent_type = "receptionist" if current_agent == agents["receptionist"] else "clinical"
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{agent_type.upper()} AGENT] [INFO] Processing message: {prompt[:50]}...")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{agent_type.upper()} AGENT] Processing message: {prompt[:50]}...")
         
         # Use LLM-based routing if we're currently on receptionist agent
         patient_context = None
@@ -269,15 +267,13 @@ def main():
                 
                 current_agent = agents["clinical"]
                 st.session_state.current_agent = current_agent
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ROUTING] Routing from RECEPTIONIST AGENT to CLINICAL AGENT")
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ROUTING] Routing to CLINICAL AGENT")
+                
                 # Add system message about routing
                 with st.chat_message("assistant"):
                     st.info("🔄 Connecting you with the clinical specialist...")
         
         # Process message through agent
-        # Wrap long-running operation with spinner OUTSIDE of chat_message to avoid blur
-        response_text = ""
-        metadata = {}
         with st.spinner("Processing..."):
             try:
                 # Prepare invoke parameters
@@ -286,6 +282,7 @@ def main():
                     "patient_name": st.session_state.current_patient,
                     "conversation_history": st.session_state.conversation_history
                 }
+                
                 # Add patient_context if available (for clinical agent)
                 if patient_context and current_agent == agents["clinical"]:
                     invoke_params["patient_context"] = patient_context
@@ -311,7 +308,6 @@ def main():
                     "metadata": metadata
                 })
                 
-                # Update conversation history for context
                 st.session_state.conversation_history.append({
                     "user": prompt,
                     "assistant": response_text
@@ -320,7 +316,8 @@ def main():
             except Exception as e:
                 error_msg = f"Sorry, I encountered an error: {str(e)}"
                 logger.error(f"Error processing message: {e}", exc_info=True)
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Error processing message: {e}")
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] {e}")
+                
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": error_msg
@@ -328,7 +325,7 @@ def main():
                 response_text = error_msg
                 metadata = {}
         
-        # Display response AFTER processing is complete
+        # Display response
         with st.chat_message("assistant"):
             if isinstance(response_text, str) and response_text.startswith("Sorry, I encountered an error"):
                 st.error(response_text)
@@ -337,21 +334,19 @@ def main():
                 
                 # Display RAG sources if available
                 citations = metadata.get("citations", [])
-                if citations and len(citations) > 0:
+                if citations:
                     st.markdown("---")
                     st.markdown("### 📚 RAG Sources")
                     for i, cite in enumerate(citations, 1):
                         citation_text = cite.get('citation', 'Unknown source') or 'Unknown source'
-                        distance_score = cite.get('distance_score', 'N/A')
                         excerpt = cite.get('excerpt', '')
                         with st.expander(f"{i}. {citation_text}", expanded=False):
-                            st.markdown(f"**Distance Score:** {distance_score}")
                             if excerpt:
                                 st.markdown(f"**Excerpt:** {excerpt}")
                 
                 # Display web search sources if available
                 web_sources = metadata.get("web_sources", [])
-                if web_sources and len(web_sources) > 0:
+                if web_sources:
                     st.markdown("---")
                     st.markdown("### 📚 Web Search Sources")
                     for i, source in enumerate(web_sources, 1):
@@ -366,10 +361,9 @@ def main():
 
 
 if __name__ == "__main__":
-    # Validate API key (only needed for LLM, not embeddings)
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    # Validate API key
+    if not os.getenv("GEMINI_API_KEY"):
         logger.warning("Missing GEMINI_API_KEY! LLM functionality will be limited.")
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] Missing GEMINI_API_KEY! LLM functionality will be limited.")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] Missing GEMINI_API_KEY!")
     
     main()

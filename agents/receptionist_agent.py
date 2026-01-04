@@ -61,12 +61,8 @@ class ReceptionistAgent:
         # create_react_agent requires a prompt parameter
         try:
             # Try to pull the default ReAct prompt from LangChain Hub
-            try:
-                prompt = hub.pull("hwchase17/react")
-            except Exception:
-                # If hub pull fails, create a basic ReAct-style prompt template
-                prompt = ChatPromptTemplate.from_messages([
-                    ("system", """You are a helpful receptionist assistant for a post-discharge medical care system. Answer the following questions as best you can. You have access to the following tools:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", """You are a helpful receptionist assistant for a post-discharge medical care system. Answer the following questions as best you can. You have access to the following tools:
 
 {tools}
 

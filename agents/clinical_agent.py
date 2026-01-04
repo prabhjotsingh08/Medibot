@@ -2,19 +2,16 @@
 Clinical Agent for Post Discharge Medical AI Assistant
 
 This agent handles clinical questions, medical advice, and complex medical queries.
-Uses RAG to retrieve relevant medical information from knowledge base.
+Uses RAG or Web Search tools based on query relevance.
 """
 
 from typing import Optional, Dict, Any, List
-from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.language_models import BaseChatModel
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain import hub
 from langchain_core.messages import HumanMessage
 from langchain_community.vectorstores import Chroma
 from rag.vectorstore import get_vectorstore
-from tools.rag_retrieval_tool import rag_retrieval, retrieve_medical_knowledge
-from tools.web_search_tool import web_search
+from tools.rag_retrieval_tool import retrieve_medical_knowledge
+from tools.web_search_tool import _serpapi_search
 from config.settings import settings
 from utils.logger_config import get_logger
 import logfire
@@ -28,11 +25,10 @@ class ClinicalAgent:
     Clinical agent that handles medical questions and clinical queries.
     
     Responsibilities:
-    - Answer clinical questions using RAG
+    - Answer clinical questions using RAG or Web Search
     - Provide medication information and guidance
     - Explain discharge instructions
     - Analyze symptoms (non-diagnostic)
-    - Retrieve relevant medical knowledge from vectorstore
     """
     
     def __init__(self, llm: BaseChatModel, vectorstore: Optional[Chroma] = None):
@@ -45,62 +41,7 @@ class ClinicalAgent:
         """
         self.llm = llm
         self.vectorstore = vectorstore or get_vectorstore()
-        self.agent = None
-        self.tools = []
-        
-        # Initialize tools
-        self._initialize_tools()
-        
-        # Create agent with tools and system prompt
-        self._create_agent()
-    
-    
-    def _initialize_tools(self):
-        """Initialize tools for the clinical agent."""
-        self.tools = [
-            rag_retrieval,  # RAG retrieval from ChromaDB
-            web_search,  # Web search for additional info
-        ]
-    
-    
-    def _create_agent(self):
-        """Create the agent with system prompt and tools."""
-        # Create agent using new LangChain 0.2+ API
-        # create_react_agent requires a prompt parameter
-        try:
-            # Try to pull the default ReAct prompt from LangChain Hub
-            try:
-                prompt = hub.pull("hwchase17/react")
-            except Exception:
-                # If hub pull fails, create a basic ReAct-style prompt template
-                prompt = ChatPromptTemplate.from_messages([
-                    ("system", """You are a helpful clinical assistant. Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Use the following format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Always emphasize that this is information, not medical diagnosis. Be clear, empathetic, and professional."""),
-                    MessagesPlaceholder(variable_name="chat_history"),
-                    ("human", "{input}"),
-                    MessagesPlaceholder(variable_name="agent_scratchpad"),
-                ])
-            
-            agent = create_react_agent(self.llm, self.tools, prompt=prompt)
-            self.agent = AgentExecutor(agent=agent, tools=self.tools, verbose=False)
-        except Exception as e:
-            logger.warning(f"Failed to create agent with new API: {e}. Using LLM directly.")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [WARNING] Failed to create agent: {e}")
-            self.agent = None
+        self.RAG_DISTANCE_THRESHOLD = 1.8
     
     
     def invoke(self, message: str, patient_name: Optional[str] = None, 
@@ -117,275 +58,371 @@ Always emphasize that this is information, not medical diagnosis. Be clear, empa
         Returns:
             Agent response with metadata and citations
         """
-        # Check for emergency keywords
-        if self.check_emergency_keywords(message):
-            logger.warning(f"Emergency keywords detected in message: {message[:50]}...")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [WARNING] Emergency keywords detected: {message[:50]}...")
-            return {
-                "response": "🚨 EMERGENCY ALERT: Please seek immediate medical attention or call emergency services (911/999). This assistant provides information only and cannot diagnose or treat emergencies.",
-                "agent_type": "clinical",
-                "emergency": True,
-                "metadata": {"action": "emergency_alert"}
-            }
-        
         logger.info(f"Processing clinical question: {message[:50]}...")
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] Processing clinical question: {message[:50]}...")
         
-        # Use RAG to answer clinical questions
-        rag_result = self.rag_answer(message, patient_context)
-        
-        # Format response with citations
-        answer = rag_result.get("answer", "")
-        citations = rag_result.get("citations", [])
-        web_sources = rag_result.get("web_sources", [])
-        
-        # Citations and web sources are displayed separately in UI (not inline)
+        # Get answer using RAG or Web Search
+        result = self._get_answer(message, patient_context)
         
         return {
-            "response": answer,
+            "response": result["answer"],
             "agent_type": "clinical",
             "patient_name": patient_name,
             "metadata": {
-                "used_rag": rag_result.get("has_rag_context", False),
-                "sources_count": len(citations),
-                "citations": citations,
-                "web_sources": web_sources
+                "tool_used": result["tool_used"],
+                "used_rag": result["tool_used"] == "rag",
+                "sources_count": len(result.get("citations", [])),
+                "citations": result.get("citations", []),
+                "web_sources": result.get("web_sources", [])
             }
         }
     
     
-    def rag_answer(self, query: str, patient_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _get_answer(self, query: str, patient_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Answer clinical question using RAG with citations.
+        Get answer using RAG or Web Search tool based on relevance.
         
         Args:
             query: User query
             patient_context: Optional patient context to enhance query
             
         Returns:
-            Dict with answer and citations
+            Dict with answer, tool_used, citations/web_sources
         """
-        # Enhance query with patient context if available
-        enhanced_query = query
-        if patient_context:
-            diagnosis = patient_context.get('primary_diagnosis', '')
-            medications = ', '.join(patient_context.get('medications', []))
-            context_str = f"Patient context: Diagnosis - {diagnosis}, Medications - {medications}. "
-            enhanced_query = context_str + query
+        # Build enhanced query with patient context
+        enhanced_query = self._build_enhanced_query(query, patient_context)
         
-        # Retrieve relevant medical knowledge from ChromaDB
+        # Retrieve RAG chunks
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] Calling RAG retrieval: {enhanced_query[:50]}...")
         retrieved_docs = retrieve_medical_knowledge(enhanced_query, k=5)
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] RAG retrieval completed: {len(retrieved_docs)} results")
         
-        # Check relevance threshold using distance_score directly
-        # Compare query with 5 closest chunks - if ALL 5 have distance_score > 0.5, use RAG
-        # Otherwise, if at least one has distance_score <= 0.5, use web search
-        RAG_DISTANCE_THRESHOLD = 0.8
-        use_rag = False
-        if retrieved_docs:
-            # Collect distance scores for all chunks
-            distance_scores = []
-            chunk_details = []  # Store details for logfire logging
-            
-            for i, doc in enumerate(retrieved_docs):
-                distance_score = float(doc.get('score', float('inf')))
-                distance_scores.append(distance_score)
-                
-                # Prepare chunk details for logfire
-                text = doc.get('text', doc.get('page_content', ''))
-                citation = doc.get('citation', 'Unknown source')
-                metadata = doc.get('metadata', {})
-                
-                chunk_details.append({
-                    "chunk_index": i + 1,
-                    "distance_score": round(distance_score, 4),
-                    "citation": citation,
-                    "source": metadata.get('source', 'Unknown'),
-                    "page": metadata.get('page', 'N/A'),
-                    "content_preview": text[:300] + "..." if len(text) > 300 else text,
-                    "content_length": len(text),
-                    "above_threshold": distance_score > RAG_DISTANCE_THRESHOLD
-                })
-            
-            # Log all 5 closest chunks to logfire for observability
-            logfire.info(
-                "RAG retrieval: 5 closest chunks analyzed",
-                query=enhanced_query[:200],
-                total_chunks=len(retrieved_docs),
-                chunks=chunk_details,
-                threshold=RAG_DISTANCE_THRESHOLD,
-                distance_scores=[round(s, 4) for s in distance_scores]
-            )
-            
-            # Check if ALL 5 closest chunks have distance_score > 0.5
-            all_above_threshold = all(score > RAG_DISTANCE_THRESHOLD for score in distance_scores)
-            
-            if all_above_threshold:
-                use_rag = True
-                logger.info(f"All {len(distance_scores)} closest chunks have distance_score > {RAG_DISTANCE_THRESHOLD} (scores: {[f'{s:.3f}' for s in distance_scores]}), using RAG")
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] All {len(distance_scores)} closest chunks have distance_score > {RAG_DISTANCE_THRESHOLD} (scores: {[f'{s:.3f}' for s in distance_scores]}), using RAG")
-                
-                # Log decision to logfire
-                logfire.info(
-                    "RAG threshold check: All chunks above threshold, using RAG",
-                    query=enhanced_query[:200],
-                    decision="rag",
-                    chunks_analyzed=len(retrieved_docs),
-                    all_distance_scores=[round(s, 4) for s in distance_scores],
-                    threshold=RAG_DISTANCE_THRESHOLD
-                )
-            else:
-                logger.info(f"At least one chunk has distance_score <= {RAG_DISTANCE_THRESHOLD} (scores: {[f'{s:.3f}' for s in distance_scores]}), switching to web search")
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] At least one chunk has distance_score <= {RAG_DISTANCE_THRESHOLD} (scores: {[f'{s:.3f}' for s in distance_scores]}), using web search instead")
-                
-                # Log decision to logfire
-                logfire.info(
-                    "RAG threshold check: At least one chunk below threshold, using web search",
-                    query=enhanced_query[:200],
-                    decision="web_search",
-                    chunks_analyzed=len(retrieved_docs),
-                    all_distance_scores=[round(s, 4) for s in distance_scores],
-                    threshold=RAG_DISTANCE_THRESHOLD,
-                    chunks_below_threshold=sum(1 for s in distance_scores if s <= RAG_DISTANCE_THRESHOLD)
-                )
+        # Decide which tool to use based on query type and RAG relevance
+        tool_decision = self._decide_tool(query, retrieved_docs)
         
-        # Format retrieved context with citations
+        if tool_decision == "rag":
+            return self._answer_with_rag(query, enhanced_query, retrieved_docs, patient_context)
+        else:
+            return self._answer_with_web_search(query, enhanced_query, patient_context)
+    
+    
+    def _build_enhanced_query(self, query: str, patient_context: Optional[Dict[str, Any]] = None) -> str:
+        """Build enhanced query with patient context."""
+        if not patient_context:
+            return query
+        
+        diagnosis = patient_context.get('primary_diagnosis', '')
+        medications = ', '.join(patient_context.get('medications', []))
+        
+        if diagnosis or medications:
+            context_str = f"Patient context: Diagnosis - {diagnosis}, Medications - {medications}. "
+            return context_str + query
+        
+        return query
+    
+    
+    def _decide_tool(self, query: str, retrieved_docs: List[Dict[str, Any]]) -> str:
+        """
+        Decide whether to use RAG or Web Search tool.
+        
+        Decision logic:
+        1. If query is research/non-medical -> Web Search
+        2. If no RAG docs retrieved -> Web Search
+        3. If any RAG chunk has distance_score > threshold -> Web Search
+        4. Otherwise -> RAG
+        
+        Args:
+            query: Original user query
+            retrieved_docs: Retrieved RAG documents
+            
+        Returns:
+            "rag" or "web_search"
+        """
+        # Check if query is research or non-medical
+        if self._is_research_or_non_medical_query(query):
+            logger.info(f"Query detected as research/non-medical, using web search")
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] Query detected as research/non-medical, using web search")
+            logfire.info(
+                "Tool decision: Research/non-medical query detected",
+                query=query[:200],
+                decision="web_search",
+                reason="research_or_non_medical"
+            )
+            return "web_search"
+        
+        # Check if RAG docs were retrieved
+        if not retrieved_docs:
+            logger.info("No RAG documents retrieved, using web search")
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] No RAG documents retrieved, using web search")
+            logfire.info(
+                "Tool decision: No RAG documents found",
+                query=query[:200],
+                decision="web_search",
+                reason="no_rag_docs"
+            )
+            return "web_search"
+        
+        # Check RAG relevance scores
+        distance_scores = []
+        chunk_details = []
+        
+        for i, doc in enumerate(retrieved_docs):
+            distance_score = float(doc.get('score', float('inf')))
+            distance_scores.append(distance_score)
+            
+            text = doc.get('text', doc.get('page_content', ''))
+            citation = doc.get('citation', 'Unknown source')
+            metadata = doc.get('metadata', {})
+            
+            chunk_details.append({
+                "chunk_index": i + 1,
+                "distance_score": round(distance_score, 4),
+                "citation": citation,
+                "source": metadata.get('source', 'Unknown'),
+                "page": metadata.get('page', 'N/A'),
+                "content_preview": text[:300] + "..." if len(text) > 300 else text,
+                "content_length": len(text),
+                "above_threshold": distance_score > self.RAG_DISTANCE_THRESHOLD
+            })
+        
+        # Log all chunks for observability
+        logfire.info(
+            "RAG retrieval: 5 closest chunks analyzed",
+            query=query[:200],
+            total_chunks=len(retrieved_docs),
+            chunks=chunk_details,
+            threshold=self.RAG_DISTANCE_THRESHOLD,
+            distance_scores=[round(s, 4) for s in distance_scores]
+        )
+        
+        # Check if any chunk exceeds threshold
+        if any(score > self.RAG_DISTANCE_THRESHOLD for score in distance_scores):
+            logger.info(f"At least one chunk has distance_score > {self.RAG_DISTANCE_THRESHOLD} (scores: {[f'{s:.3f}' for s in distance_scores]}), using web search")
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] At least one chunk above threshold, using web search")
+            
+            logfire.info(
+                "Tool decision: RAG chunks above threshold",
+                query=query[:200],
+                decision="web_search",
+                chunks_analyzed=len(retrieved_docs),
+                all_distance_scores=[round(s, 4) for s in distance_scores],
+                threshold=self.RAG_DISTANCE_THRESHOLD,
+                chunks_above_threshold=sum(1 for s in distance_scores if s > self.RAG_DISTANCE_THRESHOLD)
+            )
+            return "web_search"
+        
+        # All chunks are relevant, use RAG
+        logger.info(f"All chunks have distance_score <= {self.RAG_DISTANCE_THRESHOLD} (scores: {[f'{s:.3f}' for s in distance_scores]}), using RAG")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] All chunks below threshold, using RAG")
+        
+        logfire.info(
+            "Tool decision: RAG chunks below threshold",
+            query=query[:200],
+            decision="rag",
+            chunks_analyzed=len(retrieved_docs),
+            all_distance_scores=[round(s, 4) for s in distance_scores],
+            threshold=self.RAG_DISTANCE_THRESHOLD
+        )
+        return "rag"
+    
+    
+    def _answer_with_rag(self, original_query: str, enhanced_query: str, 
+                         retrieved_docs: List[Dict[str, Any]], 
+                         patient_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate answer using RAG tool.
+        
+        Args:
+            original_query: Original user query
+            enhanced_query: Query enhanced with patient context
+            retrieved_docs: Retrieved RAG documents
+            patient_context: Optional patient context
+            
+        Returns:
+            Dict with answer, tool_used="rag", citations
+        """
+        # Format RAG context and citations
         context_parts = []
         citations = []
-        web_sources = []  # Initialize web_sources at the start
         
-        if retrieved_docs and use_rag:
-            for i, doc in enumerate(retrieved_docs, 1):
-                text = doc.get('text', doc.get('page_content', ''))
-                citation = doc.get('citation', 'Unknown source')
-                # Use distance_score directly
-                distance_score = float(doc.get('score', 0.0))
+        for i, doc in enumerate(retrieved_docs, 1):
+            text = doc.get('text', doc.get('page_content', ''))
+            citation = doc.get('citation', 'Unknown source')
+            distance_score = float(doc.get('score', 0.0))
+            
+            context_parts.append(f"[Reference {i}] {text}")
+            citations.append({
+                "reference": i,
+                "citation": citation,
+                "distance_score": round(distance_score, 4),
+                "excerpt": text
+            })
+        
+        rag_context = "\n\n".join(context_parts)
+        
+        # Build prompt with query, patient context, and RAG chunks
+        prompt = self._build_rag_prompt(original_query, rag_context, patient_context)
+        
+        # Generate answer
+        answer = self._generate_llm_response(prompt)
+        
+        return {
+            "answer": answer,
+            "tool_used": "rag",
+            "citations": citations,
+            "web_sources": []
+        }
+    
+    
+    def _answer_with_web_search(self, original_query: str, enhanced_query: str,
+                                patient_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate answer using Web Search tool.
+        
+        Args:
+            original_query: Original user query
+            enhanced_query: Query enhanced with patient context
+            patient_context: Optional patient context
+            
+        Returns:
+            Dict with answer, tool_used="web_search", web_sources
+        """
+        web_sources = []
+        web_results_text = ""
+        
+        if not settings.USE_WEB_SEARCH:
+            logger.warning("Web search is disabled in settings")
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [WARNING] Web search is disabled")
+            web_results_text = "Web search is disabled."
+        else:
+            try:
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] Calling web_search: {original_query[:50]}...")
                 
-                context_parts.append(f"[Reference {i}] {text}")
-                citations.append({
-                    "reference": i,
-                    "citation": citation,
-                    "distance_score": round(distance_score, 4),
-                    "excerpt": text[:200] + "..." if len(text) > 200 else text
-                })
+                # Call web search with content fetching
+                structured_results = _serpapi_search(
+                    original_query, 
+                    max_results=5, 
+                    return_structured=True, 
+                    fetch_content=True
+                )
+                
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] web_search completed - found {len(structured_results) if structured_results else 0} results")
+                
+                if structured_results:
+                    # Format web results for prompt
+                    web_results_text = f"Web search results for '{original_query}':\n\n"
+                    for i, result in enumerate(structured_results, 1):
+                        web_results_text += f"[Source {i}]\n"
+                        web_results_text += f"Title: {result.get('title', '')}\n"
+                        web_results_text += f"URL: {result.get('url', '')}\n"
+                        
+                        content = result.get('content', result.get('snippet', ''))
+                        if content:
+                            web_results_text += f"Content: {content}\n"
+                        web_results_text += "\n"
+                    
+                    # Collect sources for metadata
+                    web_sources = [
+                        {
+                            "title": result.get("title", ""),
+                            "url": result.get("url", ""),
+                            "snippet": result.get("snippet", ""),
+                            "content_preview": result.get("content", result.get("snippet", ""))[:200] if result.get("content") else result.get("snippet", "")
+                        }
+                        for result in structured_results
+                    ]
+                else:
+                    web_results_text = "No web search results found."
+                    
+            except Exception as e:
+                logger.error(f"Error in web search: {e}")
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [ERROR] Error in web search: {e}")
+                web_results_text = "Web search temporarily unavailable."
         
-        context = "\n\n".join(context_parts) if context_parts else ""
+        # Build prompt with query, patient context, and web results
+        prompt = self._build_web_search_prompt(original_query, web_results_text, patient_context)
         
-        # Use LLM to generate answer (minimize Gemini API calls)
-        # If RAG results are below threshold or no RAG results, use web search
-        if context and use_rag:
-            # Build comprehensive prompt with RAG context
-            prompt = f"""You are a clinical assistant providing medical information based on retrieved knowledge.
+        # Generate answer
+        answer = self._generate_llm_response(prompt)
+        
+        return {
+            "answer": answer,
+            "tool_used": "web_search",
+            "citations": [],
+            "web_sources": web_sources
+        }
+    
+    
+    def _build_rag_prompt(self, query: str, rag_context: str, 
+                         patient_context: Optional[Dict[str, Any]] = None) -> str:
+        """Build prompt for RAG-based answer."""
+        patient_info = ""
+        if patient_context:
+            diagnosis = patient_context.get('primary_diagnosis', '')
+            medications = ', '.join(patient_context.get('medications', []))
+            if diagnosis or medications:
+                patient_info = f"\nPatient Context:\n- Diagnosis: {diagnosis}\n- Medications: {medications}\n"
+        
+        return f"""You are a clinical assistant providing medical information based on retrieved knowledge.
 
 Retrieved Medical Knowledge:
-{context}
-
+{rag_context}
+{patient_info}
 Patient Question: {query}
 
 Instructions:
 1. Answer the question using the retrieved medical knowledge above.
 2. Reference specific sources using [Reference X] notation.
-3. If the retrieved information doesn't fully answer the question, acknowledge limitations.
-4. Always emphasize this is information, not medical diagnosis.
-5. If patient context is provided, incorporate it into your answer where relevant.
+3. If patient context is provided, incorporate it into your answer where relevant.
+4. If the retrieved information doesn't fully answer the question, acknowledge limitations.
+5. Always emphasize this is information, not medical diagnosis.
 6. Be clear, empathetic, and professional.
 
 Your answer:"""
-        else:
-            # No RAG context or RAG score < 0.5 - use web search as fallback
-            logger.info("RAG score below threshold or no RAG context found, using web search")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] RAG score below threshold, calling web_search tool")
-            web_results = ""
-            
-            if settings.USE_WEB_SEARCH:
-                # Call SerpAPI web search and get structured results with fetched content
-                try:
-                    from tools.web_search_tool import _serpapi_search
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] Calling web_search: {query[:50]}...")
-                    # Get structured results with fetched content from URLs
-                    structured_results = _serpapi_search(query, max_results=5, return_structured=True, fetch_content=True)
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [TOOL] web_search completed - found {len(structured_results) if structured_results else 0} results")
-                    
-                    if structured_results:
-                        # Format for prompt with full content
-                        web_results = f"Web search results for '{query}':\n\n"
-                        for i, result in enumerate(structured_results, 1):
-                            source_num = f"[Source {i}]"
-                            
-                            web_results += f"{source_num}\n"
-                            web_results += f"Title: {result.get('title', '')}\n"
-                            web_results += f"URL: {result.get('url', '')}\n"
-                            
-                            # Use fetched content if available, otherwise use snippet
-                            content = result.get('content', result.get('snippet', ''))
-                            if content:
-                                web_results += f"Content: {content}\n"
-                            
-                            web_results += "\n"
-                        
-                        # Collect sources for display
-                        web_sources = [
-                            {
-                                "title": result.get("title", ""),
-                                "url": result.get("url", ""),
-                                "snippet": result.get("snippet", ""),
-                                "content_preview": result.get("content", result.get("snippet", ""))[:200] if result.get("content") else result.get("snippet", "")
-                            }
-                            for result in structured_results
-                        ]
-                    else:
-                        web_results = "No web search results found."
-                        web_sources = []  # Ensure web_sources is initialized
-                except Exception as e:
-                    logger.error(f"Error in web search: {e}")
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [ERROR] Error in web search: {e}")
-                    web_results = "Web search temporarily unavailable."
-                    web_sources = []  # Ensure web_sources is initialized
-            else:
-                web_results = "Web search is disabled."
-                web_sources = []  # Ensure web_sources is initialized
-            
-            prompt = f"""You are a clinical assistant. Use the following web search results to answer the question.
+    
+    
+    def _build_web_search_prompt(self, query: str, web_results: str,
+                                 patient_context: Optional[Dict[str, Any]] = None) -> str:
+        """Build prompt for web search-based answer."""
+        patient_info = ""
+        if patient_context:
+            diagnosis = patient_context.get('primary_diagnosis', '')
+            medications = ', '.join(patient_context.get('medications', []))
+            if diagnosis or medications:
+                patient_info = f"\nPatient Context:\n- Diagnosis: {diagnosis}\n- Medications: {medications}\n"
+        
+        return f"""You are a clinical assistant. Use the following web search results to answer the question.
 
 Web Search Results:
 {web_results}
-
+{patient_info}
 Patient Question: {query}
 
 Instructions:
 1. Answer the question comprehensively using the content from the web search results above.
-2. When referencing information, cite the source using [Source X] notation where X is the source number.
-3. Acknowledge that this information should be verified with healthcare providers.
-4. Always emphasize this is information, not medical diagnosis.
-5. Be clear, empathetic, and professional.
-6. Do NOT use any tools - only use the web search results provided above.
+2. When referencing information, cite the source using [Source X] notation.
+3. If patient context is provided, incorporate it into your answer where relevant.
+4. Acknowledge that this information should be verified with healthcare providers.
+5. Always emphasize this is information, not medical diagnosis.
+6. Be clear, empathetic, and professional.
 
 Your answer (with source citations using [Source X] format):"""
-        
-        # Generate response using LLM directly (bypass agent executor to prevent tool calls)
-        # Use direct LLM call for both RAG and web search since we already have the context in the prompt
-        logger.info("Using direct LLM call (bypassing agent executor) to prevent tool calls and parsing errors")
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] Using direct LLM call (bypassing agent executor)")
-        answer = self._generate_answer_direct(prompt)
-        
-        return {
-            "answer": answer,
-            "citations": citations,
-            "sources_count": len(citations),
-            "has_rag_context": len(context_parts) > 0,
-            "web_sources": web_sources
-        }
     
-    def _generate_answer_direct(self, prompt: str) -> str:
-        """Generate answer directly using LLM, bypassing agent executor to prevent tool calls."""
-        try:
-            # Use LLM directly without agent executor - this prevents any tool calls and parsing errors
-            logger.info("Calling LLM directly (no agent executor)")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] Calling LLM directly (no agent executor)")
+    
+    def _generate_llm_response(self, prompt: str) -> str:
+        """
+        Generate response using LLM directly (no agent executor).
+        
+        Args:
+            prompt: Formatted prompt with context
             
-            # Create a simple HumanMessage instead of raw prompt for better compatibility
-            from langchain_core.messages import HumanMessage
+        Returns:
+            Generated answer string
+        """
+        try:
+            logger.info("Calling LLM directly")
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [INFO] Calling LLM directly")
+            
             messages = [HumanMessage(content=prompt)]
             response = self.llm.invoke(messages)
             
@@ -394,46 +431,45 @@ Your answer (with source citations using [Source X] format):"""
             elif isinstance(response, str):
                 return response
             else:
-                # Try to extract content from response object
                 return str(response)
-        except ValueError as ve:
-            # Handle parsing errors specifically
-            error_msg = str(ve)
-            logger.error(f"Output parsing error in LLM response: {error_msg}")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [ERROR] Output parsing error: {error_msg[:200]}")
-            
-            # Try a fallback - invoke with just the prompt as string
-            try:
-                logger.info("Retrying with direct prompt string")
-                response = self.llm.invoke(prompt)
-                if hasattr(response, 'content'):
-                    return response.content
-                return str(response)
-            except Exception as e2:
-                logger.error(f"Fallback also failed: {e2}")
-                return "I apologize, but I encountered an error while generating a response. Please try again or consult your healthcare provider."
+                
         except Exception as e:
-            logger.error(f"Error generating answer: {e}")
+            logger.error(f"Error generating LLM response: {e}")
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLINICAL AGENT] [ERROR] Error generating answer: {e}")
             logfire.error("Error generating answer", error=str(e), error_type=type(e).__name__)
             return "I apologize, but I encountered an error while generating a response. Please try again or consult your healthcare provider."
     
     
-    def check_emergency_keywords(self, message: str) -> bool:
+    def _is_research_or_non_medical_query(self, query: str) -> bool:
         """
-        Check if message contains emergency keywords.
+        Check if query is about research or unrelated to medical science.
         
         Args:
-            message: User message
+            query: User query
             
         Returns:
-            True if emergency keywords detected
+            True if query is about research or non-medical topics
         """
-        emergency_keywords = [
-            "chest pain", "difficulty breathing", "severe pain",
-            "unconscious", "severe bleeding", "stroke", "heart attack"
+        query_lower = query.lower()
+        
+        # Research-related keywords
+        research_keywords = [
+            "research", "study", "studies", "clinical trial", "clinical trials",
+            "publication", "paper", "journal", "article", "findings",
+            "experiment", "experimental", "hypothesis", "methodology",
+            "data analysis", "statistical analysis", "meta-analysis",
+            "systematic review", "literature review", "peer review"
         ]
-        message_lower = message.lower()
-        # Note: Could implement more sophisticated detection in future
-        return any(keyword in message_lower for keyword in emergency_keywords)
-
+        
+        # Non-medical topics that should use web search
+        non_medical_keywords = [
+            "cooking", "recipe", "weather", "sports", "entertainment",
+            "movie", "music", "travel", "vacation", "hotel", "restaurant",
+            "shopping", "fashion", "technology news", "politics",
+            "stock market", "cryptocurrency", "bitcoin", "investment"
+        ]
+        
+        has_research_keyword = any(keyword in query_lower for keyword in research_keywords)
+        has_non_medical_keyword = any(keyword in query_lower for keyword in non_medical_keywords)
+        
+        return has_research_keyword or has_non_medical_keyword

@@ -18,7 +18,7 @@ from datetime import datetime
 
 logger = get_logger(__name__)
 
-# Initialize embedding model
+# Initialize embedding model (singleton pattern)
 _embedding_model = None
 
 
@@ -35,24 +35,14 @@ def get_embedding_model() -> Embeddings:
     if _embedding_model is None:
         embedding_provider = settings.EMBEDDING_PROVIDER.lower()
         
-        if embedding_provider == "huggingface" or embedding_provider == "local":
-            # Use all-MiniLM-L6-v2 (default, free, local)
-            logger.info("Initializing HuggingFace embeddings (all-MiniLM-L6-v2)")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Initializing HuggingFace embeddings (all-MiniLM-L6-v2)")
-            _embedding_model = HuggingFaceEmbeddings(
-                model_name="all-MiniLM-L6-v2",
-                model_kwargs={'device': 'cpu'},
-                encode_kwargs={'normalize_embeddings': True}
-            )
-        else:
-            # Default to all-MiniLM-L6-v2
-            logger.info("Using default HuggingFace embeddings (all-MiniLM-L6-v2)")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Using default HuggingFace embeddings (all-MiniLM-L6-v2)")
-            _embedding_model = HuggingFaceEmbeddings(
-                model_name="all-MiniLM-L6-v2",
-                model_kwargs={'device': 'cpu'},
-                encode_kwargs={'normalize_embeddings': True}
-            )
+        logger.info("Initializing HuggingFace embeddings (all-MiniLM-L6-v2)")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Initializing HuggingFace embeddings (all-MiniLM-L6-v2)")
+        
+        _embedding_model = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
     
     return _embedding_model
 
@@ -83,4 +73,3 @@ def embed_documents(documents: List[str]) -> List[List[float]]:
     """
     embedding_model = get_embedding_model()
     return embedding_model.embed_documents(documents)
-
